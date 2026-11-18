@@ -1,0 +1,82 @@
+// GitHub Repo Q&A Bot — Prisma schema
+//
+// SQLite is used as the local-first store. RepoChunk embeddings are
+// serialised as JSON arrays of numbers in `RepoChunk.embedding` so we can
+// compute cosine similarity in app code without requiring sqlite-vec /
+// pgvector extensions.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Repo {
+  id            String   @id @default(cuid())
+  owner         String
+  name          String
+  url           String
+  defaultBranch String?
+  description   String?
+  importedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  files  File[]
+  chunks RepoChunk[]
+}
+
+model File {
+  id        String @id @default(cuid())
+  repoId    String
+  repo      Repo   @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  path      String
+  language  String
+  lineCount Int    @default(0)
+  content   String
+  chunks    RepoChunk[]
+
+  @@index([repoId])
+}
+
+model RepoChunk {
+  id         String   @id @default(cuid())
+  repoId     String
+  repo       Repo     @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  fileId     String
+  file       File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  ordinal    Int
+  symbolName String?
+  startLine  Int
+  endLine    Int
+  content    String
+  tokens     String   // JSON-stringified token array (used by BM25)
+  embedding  String   // JSON-stringified Float32Array (used by vector search)
+  createdAt  DateTime @default(now())
+
+  @@index([repoId])
+  @@index([fileId])
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String   // "user" | "assistant" | "system"
+  content   String   // raw text of the message (assistant message may contain [^c1] markers)
+  citations String?  // JSON array of citation cards
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
